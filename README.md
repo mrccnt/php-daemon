@@ -1,11 +1,65 @@
 # Php Daemon
 
-This is an example on how to write a php based linux daemon on Ubuntu 16.04 LTS using the `posix` and `pcntl` extensions.
-The daemon itself should be compatible to most linux distros. The daemon will be installed using `systemd` as service
-manager (default for Ubuntu >= 15.04).
+This is an example on how to write a php based linux daemon on Ubuntu 16.04 LTS. The daemon is written using the
+Process Control Extensions [POSIX](http://php.net/manual/en/book.posix.php) and [PCNTL](http://php.net/manual/en/book.pcntl.php).
+Ubuntu will controll the daemon via its default init manager `systemd`.
 
-If you need to change the service manager, you just need to modify the `install.sh` script.
+Most examples on the web (even on php.net; outdated as well) are basically simple commandline applications using
+different arguments and some shell scripts starting/stoping them from `/etc/init.d`. This might work but is kind of
+ugly. There is a more elegant ways to do all this.
 
+By utilizing `systemd` and a single phar file we will create a daemon that is fully implemented in our Ubuntu system.
+The daemon will listen to POSIX signals like `SIGTERM`, `SIGHUP`, etc. Besides `install.sh` and `uninstall.sh` no shell
+scripts are needed to run the daemon.
+
+## How does it work
+
+When developing daemons/services, there are some rules that should be followed.
+
+First thing should be that we are redirecting the standard file descriptors STDIN, STDOUT and STDERR. A daemon will
+never read any inputs via STDIN so we are going to redirect STDIN to `/dev/null`. If we want to know what a daemon is
+doing we will have to check the logs. So any outputs from STDOUT and STDERR should be redirected to a logfile.
+
+Of yourse we need some kind of home- or working-directory. The daemon should always run in a save place. Optionally we
+can create a specifc user and/or group for the daemon.
+
+Now we need to set a file creation mask to define how permissions are set on new files. This way we dont have to take
+care of it when creating files in code and we can make sure to define which permissions the process is allowed to set.
+
+When a daemon is started, `systemd` expects a successful returncode (0) from the application (successful start of daemon).
+This means the application (or process) needs to exit. But if we want to keep the daemon running in background (of
+course...) we need to handle this. We are forking the current process. Now we have a parent process and a child process
+running in parallel at the same point in code. To tell `systemd` that everything worked well we kill the parent process
+`exit(0)`.
+
+The new parent process (child) is up and running. Normally daemons create subprocesses theirselves to handle non blocking
+jobs, but so far those subprocess would not get stopped if you do a `systemctl stop php-daemon`. We need to make the
+current process the session/group leader. The subprocesses will then get stopped too.
+
+We should not forget to set up a PID file containing the current process id.
+
+## Systemd / PHP
+
+The init manager and php need to handle different things:
+
+PHP:
+
+ * Forking process
+ * Handle parent/child process
+ * Make process session leader
+ * Write and lock PID file
+
+Systemd:
+
+ * Define file creation mask
+ * Set user/group
+ * Set working directory
+ * Set binary and params
+ * Define restart behaviour
+ * Handle standard file descriptors
+ * Handle logging
+ * Remove PID file
+ 
 ## Installation
 
 Remember to modify your CLI `php.ini` and set `phar.readonly=Off` before building/installing:
@@ -27,59 +81,12 @@ Use `systemd` to controll the service:
 
 ## Debugging
 
-As a systemd service you can use the `journal`:
+As a systemd service you can use `journalctl` to check what is going on. Tail the logfiles using the `-f` argument to
+see what is going on while starting or stoping the service:
 
 ```bash
-    journalctl -xe -u php-daemon
+    journalctl -f -u php-daemon
 ```
-
-Tail the logfiles to see what is going on while starting or stoping the service:
-
-    tail -f /var/log/php-daemon*log
-    
-    Starting up
-    Working Directory: /opt/php-daemon
-    Parent Process 6581 Exiting
-    Child Process 6582 Active
-    
-    ...
-    
-    SIGTERM (15): Cleaning up
-
-
-Find the process id (Main PID) of the running service:
-
-    $ systemctl status php-daemon
-      php-daemon.service - PHP Daemon
-       Loaded: loaded (/var/www/php-daemon/php-daemon.service; disabled; vendor preset: enabled)
-       Active: active (running) since Son 2017-08-20 02:16:34 CEST; 5min ago
-      Process: 6581 ExecStart=/opt/php-daemon/php-daemon (code=exited, status=0/SUCCESS)
-     Main PID: 6582 (php)
-       CGroup: /system.slice/php-daemon.service
-               └─6582 php /opt/php-daemon/php-daemon
-
-Or just:
-
-```bash
-    $ ps aux | grep php-daemon
-    root      6582  100  0.1 386484 10800 ?        Rs   02:16  10:57 php /opt/php-daemon/php-daemon
-```
-
-## Custom Signal
-
-Lets send `SIGUSR1` (10) to process ID `6582`.
-
-Using bash:
-
-```bash
-    $ kill -10 6582
-```
-
-Using PHP/Posix:
-
-```php
-    posix_kill(6582, SIGUSR1);
-```  
 
 ## Reports
 
@@ -98,4 +105,4 @@ As part of the built result, some reports and api documentations have been creat
 ## TODO
 
  * Implement proper reloading via systemd service file (`systemctl reload php-daemon`)
- * Configure default file descriptors `stdin`, `stdout` and `stderr` via systemd service file
+ * Create debian installer file

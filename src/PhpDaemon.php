@@ -52,18 +52,18 @@ class PhpDaemon
         $this->setPid();
 
         pcntl_signal(SIGTERM, function ($signo) {
-            echo 'SIGTERM ('.$signo.'): Cleaning up' . PHP_EOL . PHP_EOL;
+            echo 'SIGTERM ('.$signo.')' . PHP_EOL . PHP_EOL;
             // Clean up ...
             exit(0);
         });
 
         pcntl_signal(SIGHUP, function ($signo) {
-            echo 'SIGHUP ('.$signo.'): ...' . PHP_EOL;
+            echo 'SIGHUP ('.$signo.')' . PHP_EOL;
             // Reload configurations here
         });
 
         pcntl_signal(SIGUSR1, function ($signo) {
-            echo 'SIGUSR1 ('.$signo.'):  ...' . PHP_EOL;
+            echo 'SIGUSR1 ('.$signo.')' . PHP_EOL;
             // Handle custom signal
         });
 
@@ -89,11 +89,11 @@ class PhpDaemon
         if ($pid > 0) {
             // If we are here, we have successfully spawned a child process.
             // The parent process is not needed any more (exit).
-            echo 'Parent ' . getmypid() . ': Exiting' . PHP_EOL;
+            echo 'PID ' . getmypid() . ' exiting' . PHP_EOL;
             exit(0);
         }
 
-        echo     'Child  ' . getmypid() . ': Active' . PHP_EOL;
+        echo     'PID ' . getmypid() . ' is active' . PHP_EOL;
     }
 
     /**

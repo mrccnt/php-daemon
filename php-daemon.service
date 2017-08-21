@@ -9,7 +9,12 @@ Group=root
 WorkingDirectory=/opt/php-daemon
 ExecStart=/opt/php-daemon/php-daemon
 Restart=on-abort
-KillMode=process
+KillMode=control-group
+StandardInput=null
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=php-daemon
+UMask=0133
 
 [Install]
 WantedBy=multi-user.target

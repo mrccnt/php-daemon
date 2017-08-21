@@ -1,0 +1,5 @@
+/.idea
+/dist
+/vendor
+/*.log
+/*.phar

@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="PHP Daemon" default="build">
+
+    <autoloader autoloaderpath="vendor/autoload.php"/>
+
+    <property name="reports.title" value="PHP Daemon"/>
+    <property name="file.title" value="php-daemon"/>
+    <property name="binversion" value="1.0.0"/>
+
+    <property name="dir.dist" value="dist"/>
+    <property name="dir.temp" value="${dir.dist}/temp"/>
+    <property name="file.stub" value="stub/php-daemon.php"/>
+
+    <!--                                                -->
+    <!-- testfiles have to be available as fileset AND  -->
+    <!-- comma seperated list of directories            -->
+    <!--                                                -->
+    <fileset dir="${dir.temp}" id="testfiles">
+        <include name="src/**/*.php"/>
+    </fileset>
+    <property name="list.testfiles" value="${dir.temp}/src"/>
+    <!--                                                -->
+    <!--                                                -->
+    <!--                                                -->
+
+    <fileset dir="." id="buildfiles">
+        <include name="bin/**/*"/>
+        <include name="src/**/*"/>
+        <include name="stub/**/*"/>
+        <include name="composer.json"/>
+        <include name="composer.lock"/>
+        <include name="LICENSE"/>
+    </fileset>
+
+    <fileset dir="${dir.temp}" id="pharfiles">
+        <include name="**/*"/>
+        <exclude name="composer.json"/>
+        <exclude name="composer.lock"/>
+    </fileset>
+
+    <property name="dir.report" value="${dir.dist}/report"/>
+    <property name="dir.report.phpmd" value="${dir.report}/phpmd"/>
+    <property name="dir.report.phpcs" value="${dir.report}/phpcs"/>
+    <property name="dir.report.lint" value="${dir.report}/lint"/>
+    <property name="dir.report.pdepend" value="${dir.report}/pdepend"/>
+    <property name="dir.report.phpcpd" value="${dir.report}/phpcpd"/>
+    <property name="dir.report.phploc" value="${dir.report}/phploc"/>
+    <property name="dir.report.phpunit" value="${dir.report}/phpunit"/>
+    <property name="dir.report.apigen" value="${dir.report}/apigen"/>
+    <property name="dir.report.doc" value="${dir.report}/phpdocumentor"/>
+
+    <target name="build" depends="bootstrap,composer,phar:create,copy:assets,clear:temp,clear:lint"/><!-- TODO: clear:phpunit -->
+    <target name="report" depends="bootstrap,create:reports,clear:temp"/>
+    <target name="full" depends="bootstrap,create:reports,composer,phar:create,copy:assets,clear:temp"/>
+
+    <target name="bootstrap" hidden="true" depends="precheck,make:dist,report:lint"/> <!-- TODO: report:phpunit -->
+    <target name="create:reports" hidden="true" depends="report:phpmd,report:phpcs,report:pdepend,report:phploc,report:phpcpd,report:apigen,report:documentor"/>
+
+    <target name="precheck" hidden="true">
+        <php expression="intval(ini_get('phar.readonly'));" returnProperty="phar.readonly"/>
+        <if>
+            <equals arg1="${phar.readonly}" arg2="true"/>
+            <then>
+                <fail msg="Modify php.ini:  phar.readonly = 0"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="make:dist" depends="clear:dist" hidden="true">
+        <mkdir dir="${dir.dist}"/>
+        <mkdir dir="${dir.temp}"/>
+        <mkdir dir="${dir.report}"/>
+        <mkdir dir="${dir.report.lint}"/>
+        <copy todir="${dir.temp}">
+            <fileset refid="buildfiles"/>
+        </copy>
+    </target>
+
+    <target name="clear:dist" hidden="true">
+        <phingcall target="delete:dir">
+            <param name="dir.delete" value="${dir.dist}"/>
+        </phingcall>
+    </target>
+
+    <target name="clear:temp" hidden="true">
+        <phingcall target="delete:dir">
+            <param name="dir.delete" value="${dir.temp}"/>
+        </phingcall>
+    </target>
+
+    <target name="clear:lint" hidden="true">
+        <delete dir="${dir.report.lint}"/>
+    </target>
+
+    <target name="clear:phpunit" hidden="true">
+        <delete dir="${dir.report.phpunit}"/>
+    </target>
+
+    <target name="delete:dir" hidden="true">
+        <php function="is_dir" returnProperty="is.dir">
+            <param value="${dir.delete}"/>
+        </php>
+        <if>
+            <equals arg1="${is.dir}" arg2="true"/>
+            <then>
+                <!--                                                   -->
+                <!-- https://github.com/phingofficial/phing/issues/556 -->
+                <!--suppress PhingDomInspection                        -->
+                <!--                                                   -->
+                <chmod mode="777">
+                    <fileset dir="${dir.delete}" defaultexcludes="false">
+                        <include name="**/.git/**" />
+                    </fileset>
+                </chmod>
+            </then>
+        </if>
+        <delete dir="${dir.delete}" includeemptydirs="true"/>
+    </target>
+
+    <target name="composer" hidden="true">
+        <php function="file_exists" returnProperty="file.composer.exists">
+            <param value="composer.phar"/>
+        </php>
+        <if>
+            <equals arg1="${file.composer.exists}" arg2="true"/>
+            <then>
+                <composer command="self-update"/>
+            </then>
+            <else>
+                <httpget dir="." url="https://getcomposer.org/composer.phar" filename="composer.phar" sslVerifyPeer="false"/>
+            </else>
+        </if>
+        <composer command="install">
+            <arg value="--no-dev"/>
+            <arg value="--optimize-autoloader"/>
+            <arg value="--no-suggest"/>
+            <arg value="--no-progress"/>
+            <arg value="--working-dir"/>
+            <arg value="${dir.temp}"/>
+        </composer>
+        <delete file="composer.phar"/>
+    </target>
+
+    <target name="report:lint" hidden="true">
+        <phplint haltonfailure="true" tofile="${dir.report.lint}/files.txt" level="verbose">
+            <fileset refid="testfiles"/>
+        </phplint>
+    </target>
+
+    <target name="report:phpunit" hidden="true">
+        <mkdir dir="${dir.report.phpunit}"/>
+        <phpunit printsummary="true" configuration="phpunit.xml">
+            <formatter todir="${dir.report.phpunit}" type="xml"/>
+            <batchtest>
+                <fileset dir="tests">
+                    <include name="**/*Test*.php"/>
+                </fileset>
+            </batchtest>
+        </phpunit>
+
+    </target>
+
+    <target name="report:phpmd" hidden="true">
+        <mkdir dir="${dir.report.phpmd}"/>
+        <phpmd rulesets="codesize,unusedcode,naming">
+            <fileset refid="testfiles"/>
+            <formatter type="xml" outfile="${dir.report.phpmd}/pmd.xml"/>
+            <formatter type="html" outfile="${dir.report.phpmd}/pmd.html"/>
+            <formatter type="text" outfile="${dir.report.phpmd}/pmd.txt"/>
+        </phpmd>
+    </target>
+
+    <target name="report:phpcs" hidden="true">
+        <mkdir dir="${dir.report.phpcs}"/>
+        <phpcodesniffer standard="PSR2" encoding="utf-8" docGenerator="HTML" docFile="${dir.report.phpcs}/rules.html">
+            <fileset refid="testfiles"/>
+            <formatter type="checkstyle" outfile="${dir.report.phpcs}/format.checkstyle.xml"/>
+            <formatter type="xml" outfile="${dir.report.phpcs}/format.xml"/>
+            <formatter type="summary" outfile="${dir.report.phpcs}/format.summary.txt"/>
+            <formatter type="source" outfile="${dir.report.phpcs}/format.source.txt"/>
+            <formatter type="csv" outfile="${dir.report.phpcs}/format.csv"/>
+        </phpcodesniffer>
+    </target>
+
+    <target name="report:pdepend" hidden="true">
+        <mkdir dir="${dir.report.pdepend}"/>
+        <phpdepend>
+            <fileset refid="testfiles"/>
+            <logger type="jdepend-xml" outfile="${dir.report.pdepend}/jdepend.xml"/>
+            <logger type="summary-xml" outfile="${dir.report.pdepend}/summary.xml"/>
+            <logger type="jdepend-chart" outfile="${dir.report.pdepend}/chart.svg"/>
+            <logger type="overview-pyramid" outfile="${dir.report.pdepend}/pyramid.svg"/>
+            <analyzer type="coderank-mode" value="method"/>
+        </phpdepend>
+    </target>
+
+    <target name="report:phpcpd" hidden="true">
+        <mkdir dir="${dir.report.phpcpd}"/>
+        <phpcpd>
+            <fileset refid="testfiles"/>
+            <formatter type="pmd" outfile="${dir.report.phpcpd}/format.cpd.xml"/>
+            <formatter type="default" outfile="${dir.report.phpcpd}/format.default.txt"/>
+        </phpcpd>
+    </target>
+
+    <target name="report:documentor" hidden="true">
+        <mkdir dir="${dir.report.doc}"/>
+        <delete file="documentor.phar"/>
+        <httpget dir="." url="http://phpdoc.org/phpDocumentor.phar" filename="documentor.phar" sslVerifyPeer="false" followRedirects="true"/>
+        <phpdoc2 destdir="${dir.report.doc}" title="${reports.title}" pharlocation="documentor.phar">
+            <fileset refid="testfiles"/>
+        </phpdoc2>
+        <delete file="documentor.phar"/>
+    </target>
+
+    <target name="report:phploc" hidden="true">
+        <mkdir dir="${dir.report.phploc}"/>
+        <delete file="phploc.phar"/>
+        <httpget dir="." url="https://phar.phpunit.de/phploc.phar" filename="phploc.phar" sslVerifyPeer="false" followRedirects="true"/>
+        <phploc pharlocation="phploc.phar" reportName="${reports.title}">
+            <fileset refid="testfiles"/>
+            <formatter outfile="${dir.report.phploc}/phploc.xml" type="xml"/>
+        </phploc>
+        <delete file="phploc.phar"/>
+    </target>
+
+    <target name="report:apigen" hidden="true">
+        <mkdir dir="${dir.report.apigen}"/>
+        <delete file="apigen.phar"/>
+        <httpget dir="." url="http://apigen.org/apigen.phar" filename="apigen.phar" sslVerifyPeer="false" followRedirects="true"/>
+        <exec command="php apigen.phar generate -s ${list.testfiles} -d ${dir.report.apigen} --title &quot;${reports.title}&quot;"/>
+        <delete file="apigen.phar"/>
+    </target>
+
+    <target name="phar:create" hidden="true">
+        <pharpackage
+                compression="gzip"
+                destfile="${dir.dist}/${file.title}.phar"
+                stub="${dir.temp}/${file.stub}"
+                alias="${file.title}.phar"
+                basedir="${dir.temp}"
+                signature="sha512">
+            <fileset refid="pharfiles"/>
+            <metadata>
+                <element name="version" value="${binversion}" />
+                <element name="authors">
+                    <element name="Marco Conti">
+                        <element name="e-mail" value="github@marcoconti.org"/>
+                    </element>
+                </element>
+            </metadata>
+        </pharpackage>
+        <chmod file="${dir.dist}/${file.title}.phar" mode="775"/>
+    </target>
+
+    <target name="copy:assets" hidden="true">
+
+        <!-- TODO: config files or something -->
+        <!--
+        <mkdir dir="${dir.dist}/scripts"/>
+        <mkdir dir="${dir.dist}/sql"/>
+
+        <copy todir="${dir.dist}">
+            <fileset refid="assets:1"/>
+        </copy>
+        <copy todir="${dir.dist}/scripts">
+            <fileset refid="assets:shell:1"/>
+        </copy>
+        <copy todir="${dir.dist}/sql">
+            <fileset refid="assets:sql:1"/>
+        </copy>
+        -->
+    </target>
+
+</project>

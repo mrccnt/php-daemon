@@ -1,0 +1,15 @@
+[Unit]
+Description=PHP Daemon
+
+[Service]
+Type=forking
+PIDFile=/var/run/php-daemon.pid
+User=root
+Group=root
+WorkingDirectory=/opt/php-daemon
+ExecStart=/opt/php-daemon/php-daemon
+Restart=on-abort
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

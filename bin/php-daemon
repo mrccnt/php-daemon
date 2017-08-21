@@ -1,0 +1,8 @@
+#!/usr/bin/env php
+<?php
+
+ini_set('html_errors', 'off');
+
+putenv("CLIENT_MIGRATION_HOME=" . realpath(dirname(__FILE__) . '/../'));
+
+require_once dirname(__FILE__) . '/php-daemon.php';

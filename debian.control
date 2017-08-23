@@ -1,0 +1,14 @@
+Package: DAEMONTITLE
+Version: DAEMONVERSION
+Section: misc
+Priority: extra
+Architecture: all
+Depends:
+Installed-Size: DAEMONSIZE
+Maintainer: Marco Conti <github@marcoconti.org>
+Homepage: https://github.com/mrccnt/php-daemon
+Description: This is an example on how to write a php based
+ linux daemon on Ubuntu 16.04 LTS. The daemon is written
+ using the process control extensions POSIX and  PCNTL.
+ Ubuntu will controll the daemon via its default init manager
+ systemd.

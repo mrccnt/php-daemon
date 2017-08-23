@@ -9,8 +9,7 @@ different arguments and some shell scripts starting/stoping them from `/etc/init
 ugly. There is a more elegant ways to do all this.
 
 By utilizing `systemd` and a single phar file we will create a daemon that is fully implemented in our Ubuntu system.
-The daemon will listen to POSIX signals like `SIGTERM`, `SIGHUP`, etc. Besides `install.sh` and `uninstall.sh` no shell
-scripts are needed to run the daemon.
+The daemon will listen to POSIX signals like `SIGTERM`, `SIGHUP`, etc. No shell scripts are needed to run the daemon.
 
 ## How does it work
 
@@ -42,14 +41,16 @@ We should not forget to set up a PID file containing the current process id.
 
 The init manager and php need to handle different things:
 
-PHP:
+PHP (class `PhpDaemon\PhpDaemon`):
 
  * Forking process
  * Handle parent/child process
  * Make process session leader
  * Write and lock PID file
+ * Initialize a main loop
+ * Listen to signals
 
-Systemd:
+Systemd (systemd control file `debian.control`):
 
  * Define file creation mask
  * Set user/group
@@ -60,14 +61,29 @@ Systemd:
  * Handle logging
  * Remove PID file
  
-## Installation
+## Building
 
 Remember to modify your CLI `php.ini` and set `phar.readonly=Off` before building/installing:
 
 ```bash
     $ composer install
     $ composer build
-    $ ./install.sh
+```
+
+## Installing
+
+Install/Uninstall the daemon file directly via shell scripts:
+
+```bash
+    $ sudo ./install.sh
+    $ sudo ./uninstall.sh
+```
+
+Or you can use the debian installer package:
+
+```bash
+    $ sudo dpkg -i dist/php-daemon-1.0.0.phar
+    $ sudo dpkg -r php-daemon
 ```
 
 Use `systemd` to controll the service:
@@ -102,7 +118,6 @@ As part of the built result, some reports and api documentations have been creat
     ├── phploc
     └── phpmd
 
-## TODO
+## TODO:
 
- * Implement proper reloading via systemd service file (`systemctl reload php-daemon`)
- * Create debian installer file
+ * Replace simpe debian build mechanism and do not use `dpkg -b`

@@ -5,10 +5,11 @@
 
     <property name="reports.title" value="PHP Daemon"/>
     <property name="file.title" value="php-daemon"/>
-    <property name="binversion" value="1.0.0"/>
+    <property name="version" value="1.0.0"/>
 
     <property name="dir.dist" value="dist"/>
     <property name="dir.temp" value="${dir.dist}/temp"/>
+    <property name="dir.deb" value="${dir.dist}/deb"/>
     <property name="file.stub" value="stub/php-daemon.php"/>
 
     <!--                                                -->
@@ -49,9 +50,9 @@
     <property name="dir.report.apigen" value="${dir.report}/apigen"/>
     <property name="dir.report.doc" value="${dir.report}/phpdocumentor"/>
 
-    <target name="build" depends="bootstrap,composer,phar:create,copy:assets,clear:temp,clear:lint"/><!-- TODO: clear:phpunit -->
+    <target name="build" depends="bootstrap,composer,phar:create,deb:create,clear:temp,clear:lint"/><!-- TODO: clear:phpunit -->
     <target name="report" depends="bootstrap,create:reports,clear:temp"/>
-    <target name="full" depends="bootstrap,create:reports,composer,phar:create,copy:assets,clear:temp"/>
+    <target name="full" depends="bootstrap,create:reports,composer,phar:create,deb:create,clear:temp"/>
 
     <target name="bootstrap" hidden="true" depends="precheck,make:dist,report:lint"/> <!-- TODO: report:phpunit -->
     <target name="create:reports" hidden="true" depends="report:phpmd,report:phpcs,report:pdepend,report:phploc,report:phpcpd,report:apigen,report:documentor"/>
@@ -85,6 +86,9 @@
     <target name="clear:temp" hidden="true">
         <phingcall target="delete:dir">
             <param name="dir.delete" value="${dir.temp}"/>
+        </phingcall>
+        <phingcall target="delete:dir">
+            <param name="dir.delete" value="${dir.deb}"/>
         </phingcall>
     </target>
 
@@ -242,7 +246,7 @@
                 signature="sha512">
             <fileset refid="pharfiles"/>
             <metadata>
-                <element name="version" value="${binversion}" />
+                <element name="version" value="${version}" />
                 <element name="authors">
                     <element name="Marco Conti">
                         <element name="e-mail" value="github@marcoconti.org"/>
@@ -253,23 +257,24 @@
         <chmod file="${dir.dist}/${file.title}.phar" mode="775"/>
     </target>
 
-    <target name="copy:assets" hidden="true">
-
-        <!-- TODO: config files or something -->
-        <!--
-        <mkdir dir="${dir.dist}/scripts"/>
-        <mkdir dir="${dir.dist}/sql"/>
-
-        <copy todir="${dir.dist}">
-            <fileset refid="assets:1"/>
-        </copy>
-        <copy todir="${dir.dist}/scripts">
-            <fileset refid="assets:shell:1"/>
-        </copy>
-        <copy todir="${dir.dist}/sql">
-            <fileset refid="assets:sql:1"/>
-        </copy>
-        -->
+    <target name="deb:create" description="Build debian installer package" hidden="true">
+        <mkdir dir="${dir.deb}/DEBIAN"/>
+        <!--<mkdir dir="${dir.deb}/usr/bin"/>-->
+        <mkdir dir="${dir.deb}/opt/php-daemon"/>
+        <mkdir dir="${dir.deb}/lib/systemd/system"/>
+        <copy file="debian.control" tofile="${dir.deb}/DEBIAN/control"/>
+        <copy file="php-daemon.service" tofile="${dir.deb}/lib/systemd/system/php-daemon.service"/>
+        <copy file="${dir.dist}/${file.title}.phar" tofile="${dir.deb}/opt/php-daemon/${file.title}"/>
+        <!--<exec command="ln -rs ${dir.deb}/opt/php-daemon/${file.title} ${dir.deb}/usr/bin/${file.title} "/>-->
+        <php expression="intval(round(intval((intval(filesize('dist/php-daemon.phar'))+intval(filesize('php-daemon.service')))/1024)))" returnProperty="size"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONVERSION" replace="${version}"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONSIZE" replace="${size}"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONTITLE" replace="${file.title}"/>
+        <exec executable="dpkg">
+            <arg value="-b" />
+            <arg value="${dir.deb}" />
+            <arg value="${dir.dist}/${file.title}-${version}.deb" />
+        </exec>
     </target>
 
 </project>

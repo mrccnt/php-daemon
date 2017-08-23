@@ -21,6 +21,11 @@ use Psr\Container\ContainerInterface;
 class PhpDaemon
 {
     /**
+     * Main loop interval in seconds
+     */
+    const TICK_SECS = 1;
+
+    /**
      * @var Container
      */
     protected $container;
@@ -49,17 +54,17 @@ class PhpDaemon
      */
     public function run()
     {
-        $this->setPid();
+        $this->pid();
 
         pcntl_signal(SIGTERM, function ($signo) {
             echo 'SIGTERM ('.$signo.')' . PHP_EOL . PHP_EOL;
-            // Clean up ...
+            // Clean up temp files, caches, etc.
             exit(0);
         });
 
         pcntl_signal(SIGHUP, function ($signo) {
             echo 'SIGHUP ('.$signo.')' . PHP_EOL;
-            // Reload configurations here
+            // Reload configs, reload pimple container, etc.
         });
 
         pcntl_signal(SIGUSR1, function ($signo) {
@@ -68,11 +73,29 @@ class PhpDaemon
         });
 
         while (true) {
+            time_sleep_until(microtime(true) + self::TICK_SECS);
             pcntl_signal_dispatch();
-            // TODO: Your service logic goes here...
-            // TODO: Detect if your service needs to do something
-            // TODO: Exec in seperate process to prevent blocking main loop and finally exit(0)
+            $this->tick();
         }
+    }
+
+    /**
+     * Will be executed in intervalls.
+     */
+    protected function tick()
+    {
+        // TODO: Your service logic goes here...
+        // TODO: Detect if your service needs to do something
+        // TODO: Exec in seperate process to prevent blocking main loop and finally exit(0)
+
+        // $units = ['b','kb','mb','gb','tb','pb'];
+        // $size = memory_get_usage(true);
+        //
+        // $value = @round($size/pow(1024, ($idx=floor(log($size, 1024)))), PHP_ROUND_HALF_DOWN);
+        // $unit = $units[intval($idx)];
+        //
+        // echo 'MemoryLimit: ' . ini_get('memory_limit') . PHP_EOL;
+        // echo 'MemoryUsage: ' . $value . ' ' . $unit . PHP_EOL;
     }
 
     /**
@@ -99,7 +122,7 @@ class PhpDaemon
     /**
      * We want to be the process session/group leader. Further processes
      * created by the daemon will be a subprocess of this one here and
-     * therefore depend on our new main process created via $this->>fork().
+     * therefore depend on our new main process created via $this->fork().
      *
      * @throws \Exception
      */
@@ -111,7 +134,12 @@ class PhpDaemon
         }
     }
 
-    protected function setPid()
+    /**e
+     * Write a PID file and lock it
+     *
+     * @throws \Exception
+     */
+    protected function pid()
     {
         if ($this->container['pid']===false) {
             throw new \Exception('Can not access PID file');

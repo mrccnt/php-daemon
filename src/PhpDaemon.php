@@ -2,8 +2,12 @@
 
 namespace PhpDaemon;
 
+use Monolog\Formatter\LineFormatter;
+use Monolog\Handler\SyslogHandler;
+use Monolog\Logger;
+use PhpDaemon\Exception;
+use PhpDaemon\Task\MyTask;
 use Pimple\Container;
-use Psr\Container\ContainerInterface;
 
 /**
  * Class PhpDaemon
@@ -20,10 +24,20 @@ use Psr\Container\ContainerInterface;
  */
 class PhpDaemon
 {
+
+    const VERSION = '1.0.0';
+    const NAME = 'PHP Daemon';
+    const PACKET = 'php-daemon';
+
     /**
-     * Main loop interval in seconds
+     * Main loop interval in seconds as float
      */
-    const TICK_SECS = 1;
+    const TICK_SECS = 5.0;
+
+    /**
+     * Static path to the pid file. Maybe get path from ubuntu env somehow?
+     */
+    const PID_FILE = '/var/run/php-daemon.pid';
 
     /**
      * @var Container
@@ -31,44 +45,31 @@ class PhpDaemon
     protected $container;
 
     /**
-     * @SuppressWarnings(PHPMD.UnusedLocalVariable)
-     */
-    public function __construct()
-    {
-        $this->fork();
-        $this->lead();
-
-        $this->container = new Container();
-
-        /**
-         * @param ContainerInterface $container
-         * @return bool|resource
-         */
-        $this->container['pid'] = function ($container) {
-            return fopen('/var/run/php-daemon.pid', 'c');
-        };
-    }
-
-    /**
      * Register handlers to signals and enter main loop
      */
     public function run()
     {
+        $this->fork();
+        $this->lead();
+        $this->load();
         $this->pid();
 
-        pcntl_signal(SIGTERM, function ($signo) {
-            echo 'SIGTERM ('.$signo.')' . PHP_EOL . PHP_EOL;
+        /** @var Logger $log */
+        $log = $this->container['logger'];
+
+        pcntl_signal(SIGTERM, function ($signo) use ($log) {
+            $log->info('SIGTERM ('.$signo.')');
             // Clean up temp files, caches, etc.
             exit(0);
         });
 
-        pcntl_signal(SIGHUP, function ($signo) {
-            echo 'SIGHUP ('.$signo.')' . PHP_EOL;
+        pcntl_signal(SIGHUP, function ($signo) use ($log) {
+            $log->info('SIGHUP ('.$signo.')');
             // Reload configs, reload pimple container, etc.
         });
 
-        pcntl_signal(SIGUSR1, function ($signo) {
-            echo 'SIGUSR1 ('.$signo.')' . PHP_EOL;
+        pcntl_signal(SIGUSR1, function ($signo) use ($log) {
+            $log->info('SIGUSR1 ('.$signo.')');
             // Handle custom signal
         });
 
@@ -88,14 +89,9 @@ class PhpDaemon
         // TODO: Detect if your service needs to do something
         // TODO: Exec in seperate process to prevent blocking main loop and finally exit(0)
 
-        // $units = ['b','kb','mb','gb','tb','pb'];
-        // $size = memory_get_usage(true);
-        //
-        // $value = @round($size/pow(1024, ($idx=floor(log($size, 1024)))), PHP_ROUND_HALF_DOWN);
-        // $unit = $units[intval($idx)];
-        //
-        // echo 'MemoryLimit: ' . ini_get('memory_limit') . PHP_EOL;
-        // echo 'MemoryUsage: ' . $value . ' ' . $unit . PHP_EOL;
+        /** @var MyTask $task */
+        $task = $this->container['mytask'];
+        $task->execute();
     }
 
     /**
@@ -106,56 +102,106 @@ class PhpDaemon
         $pid = pcntl_fork();
 
         if ($pid < 0) {
-            throw new \Exception('Forking the currently running process failed', 1);
+            throw new Exception\ForkException();
         }
 
         if ($pid > 0) {
-            // If we are here, we have successfully spawned a child process.
-            // The parent process is not needed any more (exit).
-            echo 'PID ' . getmypid() . ' exiting' . PHP_EOL;
             exit(0);
         }
-
-        echo     'PID ' . getmypid() . ' is active' . PHP_EOL;
     }
 
     /**
-     * We want to be the process session/group leader. Further processes
-     * created by the daemon will be a subprocess of this one here and
-     * therefore depend on our new main process created via $this->fork().
-     *
      * @throws \Exception
      */
     protected function lead()
     {
         $sid = posix_setsid();
         if ($sid < 0) {
-            throw new \Exception('Making the current process a session leader failed', 2);
+            throw new Exception\LeadException();
         }
     }
 
-    /**e
-     * Write a PID file and lock it
-     *
+    /**
      * @throws \Exception
      */
     protected function pid()
     {
         if ($this->container['pid']===false) {
-            throw new \Exception('Can not access PID file');
+            throw new Exception\FileAccessException(self::PID_FILE);
         }
 
         $lock = flock($this->container['pid'], LOCK_EX | LOCK_NB, $block);
 
         if (!$lock) {
-            throw new \Exception('Could not acquire lock on PID file');
+            throw new Exception\LockException(self::PID_FILE);
         }
 
         if ($block) {
-            throw new \Exception('Another instance is already running; Terminating');
+            throw new Exception\BlockException();
         }
 
         ftruncate($this->container['pid'], 0);
         fwrite($this->container['pid'], getmypid() . PHP_EOL);
+    }
+
+    /**
+     * @SuppressWarnings(PHPMD.UnusedLocalVariable)
+     */
+    protected function load()
+    {
+        $this->container = new Container();
+
+        /**
+         * @param Container $container
+         * @return array
+         */
+        $this->container['settings'] = function ($container) {
+            return $this->getSettings();
+        };
+
+        /**
+         * @param Container $container
+         * @return bool|resource
+         */
+        $this->container['pid'] = function ($container) {
+            return fopen($container['settings']['pid']['file'], 'c');
+        };
+
+        /**
+         * @param Container $container
+         * @return Logger
+         */
+        $this->container['logger'] = function ($container) {
+            $settings = $container['settings']['logger'];
+            $logger = new Logger($settings['name']);
+            $syslog = new SyslogHandler($settings['ident'], LOG_SYSLOG);
+            $syslog->setFormatter(new LineFormatter("%level_name%: %message% %extra%"));
+            $logger->pushHandler($syslog);
+            return $logger;
+        };
+
+        /**
+         * @param Container $container
+         * @return MyTask
+         */
+        $this->container['mytask'] = function ($container) {
+            return new MyTask($container['logger']);
+        };
+    }
+
+    /**
+     * @return array
+     */
+    protected function getSettings()
+    {
+        return [
+            'pid' => [
+                'file' => '/var/run/php-daemon.pid'
+            ],
+            'logger' => [
+                'name' => self::PACKET,
+                'ident' => 'php-daemon',
+            ],
+        ];
     }
 }

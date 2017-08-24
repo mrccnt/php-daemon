@@ -9,7 +9,5 @@ systemctl stop php-daemon
 
 [ -d /opt/php-daemon ] && rm -r /opt/php-daemon
 [ -L /lib/systemd/system/php-daemon.service ] && rm /lib/systemd/system/php-daemon.service
-# [ -f /var/log/php-daemon.log ] && rm /var/log/php-daemon.log
-# [ -f /var/log/php-daemon.error.log ] && rm /var/log/php-daemon.error.log
 
 systemctl daemon-reload

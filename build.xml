@@ -273,7 +273,7 @@
         <exec executable="dpkg">
             <arg value="-b" />
             <arg value="${dir.deb}" />
-            <arg value="${dir.dist}/${file.title}-${version}.deb" />
+            <arg value="${dir.dist}/${file.title}.deb" />
         </exec>
     </target>
 

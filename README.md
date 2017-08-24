@@ -82,7 +82,7 @@ Install/Uninstall the daemon file directly via shell scripts:
 Or you can use the debian installer package:
 
 ```bash
-    $ sudo dpkg -i dist/php-daemon-1.0.0.phar
+    $ sudo dpkg -i dist/php-daemon.deb
     $ sudo dpkg -r php-daemon
 ```
 

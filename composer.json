@@ -13,7 +13,8 @@
         "php": ">=7.0.0",
         "ext-posix": "*",
         "ext-pcntl": "*",
-        "pimple/pimple": "^3.2"
+        "pimple/pimple": "^3.2",
+        "monolog/monolog": "^1.23"
     },
     "require-dev": {
         "ext-phar": "*",

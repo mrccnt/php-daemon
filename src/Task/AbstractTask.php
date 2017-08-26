@@ -3,7 +3,6 @@
 namespace PhpDaemon\Task;
 
 use Monolog\Logger;
-use PhpDaemon\Exception\ForkException;
 
 /**
  * Class AbstractTask
@@ -25,24 +24,12 @@ abstract class AbstractTask
     }
 
     /**
-     * @return bool
-     * @throws ForkException
+     * Execute the task
      */
-    protected function split()
+    public function execute()
     {
-        $pid = pcntl_fork();
-
-        if ($pid < 0) {
-            throw new ForkException();
-        }
-
-        if ($pid > 0) {
-            $this->log->debug('Returning parent process');
-            return true;
-        }
-
-        $this->log->debug('Task process active ');
-
-        return false;
+        $this->log->crit('Task '.get_class($this).' is not configured!');
+        $this->log->crit('Overwrite AbstractTask::execute() with your own logic');
+        exit(0);
     }
 }

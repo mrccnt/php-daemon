@@ -5,8 +5,8 @@ namespace PhpDaemon;
 use Monolog\Formatter\LineFormatter;
 use Monolog\Handler\SyslogHandler;
 use Monolog\Logger;
-use PhpDaemon\Exception;
 use PhpDaemon\Task\MyTask;
+use PhpDaemon\Traits\ProcessTrait;
 use Pimple\Container;
 
 /**
@@ -24,6 +24,7 @@ use Pimple\Container;
  */
 class PhpDaemon
 {
+    use ProcessTrait;
 
     const VERSION = '1.0.0';
     const NAME = 'PHP Daemon';
@@ -33,11 +34,6 @@ class PhpDaemon
      * Main loop interval in seconds as float
      */
     const TICK_SECS = 5.0;
-
-    /**
-     * Static path to the pid file. Maybe get path from ubuntu env somehow?
-     */
-    const PID_FILE = '/var/run/php-daemon.pid';
 
     /**
      * @var Container
@@ -52,7 +48,7 @@ class PhpDaemon
         $this->fork();
         $this->lead();
         $this->load();
-        $this->pid();
+        $this->pid($this->container['pid']);
 
         /** @var Logger $log */
         $log = $this->container['logger'];
@@ -73,75 +69,29 @@ class PhpDaemon
             // Handle custom signal
         });
 
+        $this->loop();
+    }
+
+    /**
+     * Main Loop
+     */
+    protected function loop()
+    {
+        /** @var Logger $log */
+        $log = $this->container['logger'];
+        
         while (true) {
-            time_sleep_until(microtime(true) + self::TICK_SECS);
+            // Dispatch signals if any
             pcntl_signal_dispatch();
-            $this->tick();
+
+            // Our custom Task
+            $this->container['mytask']->execute();
+
+            // Slow down...
+            $log->debug('Main Sleep ('.intval(self::TICK_SECS).')');
+            time_sleep_until(microtime(true) + self::TICK_SECS);
+            $log->debug('Main Awake');
         }
-    }
-
-    /**
-     * Will be executed in intervalls.
-     */
-    protected function tick()
-    {
-        // TODO: Your service logic goes here...
-        // TODO: Detect if your service needs to do something
-        // TODO: Exec in seperate process to prevent blocking main loop and finally exit(0)
-
-        /** @var MyTask $task */
-        $task = $this->container['mytask'];
-        $task->execute();
-    }
-
-    /**
-     * @throws \Exception
-     */
-    protected function fork()
-    {
-        $pid = pcntl_fork();
-
-        if ($pid < 0) {
-            throw new Exception\ForkException();
-        }
-
-        if ($pid > 0) {
-            exit(0);
-        }
-    }
-
-    /**
-     * @throws \Exception
-     */
-    protected function lead()
-    {
-        $sid = posix_setsid();
-        if ($sid < 0) {
-            throw new Exception\LeadException();
-        }
-    }
-
-    /**
-     * @throws \Exception
-     */
-    protected function pid()
-    {
-        if ($this->container['pid']===false) {
-            throw new Exception\FileAccessException(self::PID_FILE);
-        }
-
-        $lock = flock($this->container['pid'], LOCK_EX | LOCK_NB, $block);
-
-        if (!$lock) {
-            throw new Exception\LockException(self::PID_FILE);
-        }
-
-        if ($block) {
-            throw new Exception\BlockException();
-        }
-
-        ftruncate($this->container['pid'], 0);
-        fwrite($this->container['pid'], getmypid() . PHP_EOL);
     }
 
     /**
@@ -156,7 +106,19 @@ class PhpDaemon
          * @return array
          */
         $this->container['settings'] = function ($container) {
-            return $this->getSettings();
+            return [
+                'pid' => [
+                    'file' => '/var/run/php-daemon.pid'
+                ],
+                'logger' => [
+                    'name' => 'php-daemon',
+                    'ident' => 'php-daemon',
+                    'facility' => LOG_SYSLOG,
+                    'level' => Logger::DEBUG,
+                    'bubble' => true,
+                    'logopts' => LOG_PID,
+                ],
+            ];
         };
 
         /**
@@ -172,12 +134,18 @@ class PhpDaemon
          * @return Logger
          */
         $this->container['logger'] = function ($container) {
-            $settings = $container['settings']['logger'];
-            $logger = new Logger($settings['name']);
-            $syslog = new SyslogHandler($settings['ident'], LOG_SYSLOG);
-            $syslog->setFormatter(new LineFormatter("%level_name%: %message% %extra%"));
-            $logger->pushHandler($syslog);
-            return $logger;
+            $cfg = $container['settings']['logger'];
+            $handler = new SyslogHandler(
+                $cfg['ident'],
+                $cfg['facility'],
+                $cfg['level'],
+                $cfg['bubble'],
+                $cfg['logopts']
+            );
+            $handler->setFormatter(new LineFormatter("%level_name%: %message% %extra%"));
+            $mono = new Logger($cfg['name']);
+            $mono->pushHandler($handler);
+            return $mono;
         };
 
         /**
@@ -187,21 +155,5 @@ class PhpDaemon
         $this->container['mytask'] = function ($container) {
             return new MyTask($container['logger']);
         };
-    }
-
-    /**
-     * @return array
-     */
-    protected function getSettings()
-    {
-        return [
-            'pid' => [
-                'file' => '/var/run/php-daemon.pid'
-            ],
-            'logger' => [
-                'name' => self::PACKET,
-                'ident' => 'php-daemon',
-            ],
-        ];
     }
 }

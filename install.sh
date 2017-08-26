@@ -23,5 +23,5 @@ chmod +x ${curdir}/dist/php-daemon.phar
 
 systemctl daemon-reload
 
-systemctl start php-daemon
-systemctl status php-daemon
+# systemctl start php-daemon
+# systemctl status php-daemon

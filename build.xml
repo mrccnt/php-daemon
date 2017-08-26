@@ -3,26 +3,18 @@
 
     <autoloader autoloaderpath="vendor/autoload.php"/>
 
-    <property name="reports.title" value="PHP Daemon"/>
-    <property name="file.title" value="php-daemon"/>
-    <property name="version" value="1.0.0"/>
+    <php expression="PhpDaemon\PhpDaemon::NAME" returnProperty="reports.title"/>
+    <php expression="PhpDaemon\PhpDaemon::PACKET" returnProperty="file.title"/>
+    <php expression="PhpDaemon\PhpDaemon::VERSION" returnProperty="version"/>
 
     <property name="dir.dist" value="dist"/>
     <property name="dir.temp" value="${dir.dist}/temp"/>
     <property name="dir.deb" value="${dir.dist}/deb"/>
-    <property name="file.stub" value="stub/php-daemon.php"/>
+    <property name="file.stub" value="stub/${file.title}.php"/>
 
-    <!--                                                -->
-    <!-- testfiles have to be available as fileset AND  -->
-    <!-- comma seperated list of directories            -->
-    <!--                                                -->
     <fileset dir="${dir.temp}" id="testfiles">
         <include name="src/**/*.php"/>
     </fileset>
-    <property name="list.testfiles" value="${dir.temp}/src"/>
-    <!--                                                -->
-    <!--                                                -->
-    <!--                                                -->
 
     <fileset dir="." id="buildfiles">
         <include name="bin/**/*"/>
@@ -47,15 +39,54 @@
     <property name="dir.report.phpcpd" value="${dir.report}/phpcpd"/>
     <property name="dir.report.phploc" value="${dir.report}/phploc"/>
     <property name="dir.report.phpunit" value="${dir.report}/phpunit"/>
-    <property name="dir.report.apigen" value="${dir.report}/apigen"/>
-    <property name="dir.report.doc" value="${dir.report}/phpdocumentor"/>
 
-    <target name="build" depends="bootstrap,composer,phar:create,deb:create,clear:temp,clear:lint"/><!-- TODO: clear:phpunit -->
-    <target name="report" depends="bootstrap,create:reports,clear:temp"/>
-    <target name="full" depends="bootstrap,create:reports,composer,phar:create,deb:create,clear:temp"/>
+    <!-- clear:phpunit -->
+    <target name="build"
+            depends="
+                bootstrap,
+                composer,
+                phar:create,
+                deb:create,
+                clear:temp,
+                clear:lint,
+                clear:phpunit"
+    />
 
-    <target name="bootstrap" hidden="true" depends="precheck,make:dist,report:lint"/> <!-- TODO: report:phpunit -->
-    <target name="create:reports" hidden="true" depends="report:phpmd,report:phpcs,report:pdepend,report:phploc,report:phpcpd,report:apigen,report:documentor"/>
+    <target name="report"
+            depends="
+                bootstrap,
+                create:reports,
+                clear:temp"
+    />
+
+    <target name="full"
+            depends="
+                bootstrap,
+                create:reports,
+                composer,
+                phar:create,
+                deb:create,
+                clear:temp"
+    />
+
+    <target name="bootstrap"
+            hidden="true"
+            depends="
+                precheck,
+                make:dist,
+                report:lint,
+                report:phpunit"
+    />
+
+    <target name="create:reports"
+            hidden="true"
+            depends="
+                report:phpmd,
+                report:phpcs,
+                report:pdepend,
+                report:phploc,
+                report:phpcpd"
+    />
 
     <target name="precheck" hidden="true">
         <php expression="intval(ini_get('phar.readonly'));" returnProperty="phar.readonly"/>
@@ -68,10 +99,7 @@
     </target>
 
     <target name="make:dist" depends="clear:dist" hidden="true">
-        <mkdir dir="${dir.dist}"/>
         <mkdir dir="${dir.temp}"/>
-        <mkdir dir="${dir.report}"/>
-        <mkdir dir="${dir.report.lint}"/>
         <copy todir="${dir.temp}">
             <fileset refid="buildfiles"/>
         </copy>
@@ -101,9 +129,7 @@
     </target>
 
     <target name="delete:dir" hidden="true">
-        <php function="is_dir" returnProperty="is.dir">
-            <param value="${dir.delete}"/>
-        </php>
+        <available file="${dir.delete}" property="is.dir" value="true"/>
         <if>
             <equals arg1="${is.dir}" arg2="true"/>
             <then>
@@ -122,9 +148,7 @@
     </target>
 
     <target name="composer" hidden="true">
-        <php function="file_exists" returnProperty="file.composer.exists">
-            <param value="composer.phar"/>
-        </php>
+        <available file="composer.phar" property="file.composer.exists" value="true" />
         <if>
             <equals arg1="${file.composer.exists}" arg2="true"/>
             <then>
@@ -145,7 +169,47 @@
         <delete file="composer.phar"/>
     </target>
 
+    <target name="phar:create" hidden="true">
+        <pharpackage
+                compression="gzip"
+                destfile="${dir.dist}/${file.title}.phar"
+                stub="${dir.temp}/${file.stub}"
+                alias="${file.title}.phar"
+                basedir="${dir.temp}"
+                signature="sha512">
+            <fileset refid="pharfiles"/>
+            <metadata>
+                <element name="version" value="${version}" />
+                <element name="authors">
+                    <element name="Marco Conti">
+                        <element name="e-mail" value="github@marcoconti.org"/>
+                    </element>
+                </element>
+            </metadata>
+        </pharpackage>
+        <chmod file="${dir.dist}/${file.title}.phar" mode="775"/>
+    </target>
+
+    <target name="deb:create" hidden="true">
+        <mkdir dir="${dir.deb}/DEBIAN"/>
+        <mkdir dir="${dir.deb}/lib/systemd/system"/>
+        <mkdir dir="${dir.deb}/opt/${file.title}"/>
+        <copy file="debian.control" tofile="${dir.deb}/DEBIAN/control"/>
+        <copy file="${file.title}.service" tofile="${dir.deb}/lib/systemd/system/${file.title}.service"/>
+        <copy file="${dir.dist}/${file.title}.phar" tofile="${dir.deb}/opt/${file.title}/${file.title}"/>
+        <php expression="intval(round(intval((intval(filesize('dist/${file.title}.phar'))+intval(filesize('${file.title}.service')))/1024)))" returnProperty="size"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONVERSION" replace="${version}"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONSIZE" replace="${size}"/>
+        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONTITLE" replace="${file.title}"/>
+        <exec executable="dpkg">
+            <arg value="-b" />
+            <arg value="${dir.deb}" />
+            <arg value="${dir.dist}/${file.title}.deb" />
+        </exec>
+    </target>
+
     <target name="report:lint" hidden="true">
+        <mkdir dir="${dir.report.lint}"/>
         <phplint haltonfailure="true" tofile="${dir.report.lint}/files.txt" level="verbose">
             <fileset refid="testfiles"/>
         </phplint>
@@ -153,15 +217,14 @@
 
     <target name="report:phpunit" hidden="true">
         <mkdir dir="${dir.report.phpunit}"/>
-        <phpunit printsummary="true" configuration="phpunit.xml">
-            <formatter todir="${dir.report.phpunit}" type="xml"/>
-            <batchtest>
-                <fileset dir="tests">
-                    <include name="**/*Test*.php"/>
-                </fileset>
-            </batchtest>
-        </phpunit>
-
+        <!--<phpunit printsummary="true" configuration="phpunit.xml">-->
+            <!--<formatter todir="${dir.report.phpunit}" type="xml"/>-->
+            <!--<batchtest>-->
+                <!--<fileset dir="tests">-->
+                    <!--<include name="**/*Test*.php"/>-->
+                <!--</fileset>-->
+            <!--</batchtest>-->
+        <!--</phpunit>-->
     </target>
 
     <target name="report:phpmd" hidden="true">
@@ -207,16 +270,6 @@
         </phpcpd>
     </target>
 
-    <target name="report:documentor" hidden="true">
-        <mkdir dir="${dir.report.doc}"/>
-        <delete file="documentor.phar"/>
-        <httpget dir="." url="http://phpdoc.org/phpDocumentor.phar" filename="documentor.phar" sslVerifyPeer="false" followRedirects="true"/>
-        <phpdoc2 destdir="${dir.report.doc}" title="${reports.title}" pharlocation="documentor.phar">
-            <fileset refid="testfiles"/>
-        </phpdoc2>
-        <delete file="documentor.phar"/>
-    </target>
-
     <target name="report:phploc" hidden="true">
         <mkdir dir="${dir.report.phploc}"/>
         <delete file="phploc.phar"/>
@@ -226,55 +279,6 @@
             <formatter outfile="${dir.report.phploc}/phploc.xml" type="xml"/>
         </phploc>
         <delete file="phploc.phar"/>
-    </target>
-
-    <target name="report:apigen" hidden="true">
-        <mkdir dir="${dir.report.apigen}"/>
-        <delete file="apigen.phar"/>
-        <httpget dir="." url="http://apigen.org/apigen.phar" filename="apigen.phar" sslVerifyPeer="false" followRedirects="true"/>
-        <exec command="php apigen.phar generate -s ${list.testfiles} -d ${dir.report.apigen} --title &quot;${reports.title}&quot;"/>
-        <delete file="apigen.phar"/>
-    </target>
-
-    <target name="phar:create" hidden="true">
-        <pharpackage
-                compression="gzip"
-                destfile="${dir.dist}/${file.title}.phar"
-                stub="${dir.temp}/${file.stub}"
-                alias="${file.title}.phar"
-                basedir="${dir.temp}"
-                signature="sha512">
-            <fileset refid="pharfiles"/>
-            <metadata>
-                <element name="version" value="${version}" />
-                <element name="authors">
-                    <element name="Marco Conti">
-                        <element name="e-mail" value="github@marcoconti.org"/>
-                    </element>
-                </element>
-            </metadata>
-        </pharpackage>
-        <chmod file="${dir.dist}/${file.title}.phar" mode="775"/>
-    </target>
-
-    <target name="deb:create" description="Build debian installer package" hidden="true">
-        <mkdir dir="${dir.deb}/DEBIAN"/>
-        <!--<mkdir dir="${dir.deb}/usr/bin"/>-->
-        <mkdir dir="${dir.deb}/opt/php-daemon"/>
-        <mkdir dir="${dir.deb}/lib/systemd/system"/>
-        <copy file="debian.control" tofile="${dir.deb}/DEBIAN/control"/>
-        <copy file="php-daemon.service" tofile="${dir.deb}/lib/systemd/system/php-daemon.service"/>
-        <copy file="${dir.dist}/${file.title}.phar" tofile="${dir.deb}/opt/php-daemon/${file.title}"/>
-        <!--<exec command="ln -rs ${dir.deb}/opt/php-daemon/${file.title} ${dir.deb}/usr/bin/${file.title} "/>-->
-        <php expression="intval(round(intval((intval(filesize('dist/php-daemon.phar'))+intval(filesize('php-daemon.service')))/1024)))" returnProperty="size"/>
-        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONVERSION" replace="${version}"/>
-        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONSIZE" replace="${size}"/>
-        <replaceregexp file="${dir.deb}/DEBIAN/control" match="DAEMONTITLE" replace="${file.title}"/>
-        <exec executable="dpkg">
-            <arg value="-b" />
-            <arg value="${dir.deb}" />
-            <arg value="${dir.dist}/${file.title}.deb" />
-        </exec>
     </target>
 
 </project>

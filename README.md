@@ -35,7 +35,7 @@ The new parent process (child) is up and running. Normally daemons create subpro
 jobs, but so far those subprocess would not get stopped if you do a `systemctl stop php-daemon`. We need to make the
 current process the session/group leader. The subprocesses will then get stopped too.
 
-We should not forget to set up a PID file containing the current process id.
+Dont forget to set up a PID file containing the current process id.
 
 ## Systemd / PHP
 
@@ -70,6 +70,17 @@ Remember to modify your CLI `php.ini` and set `phar.readonly=Off` before buildin
     $ composer build
 ```
 
+As part of the built result, some reports and api docs have been created:
+
+    dist/report
+    ├── apigen
+    ├── lint
+    ├── pdepend
+    ├── phpcpd
+    ├── phpcs
+    ├── phploc
+    └── phpmd
+
 ## Installing
 
 Install/Uninstall the daemon file directly via shell scripts:
@@ -86,7 +97,7 @@ Or you can use the debian installer package:
     $ sudo dpkg -r php-daemon
 ```
 
-Use `systemd` to controll the service:
+Use can `systemd` to controll the service:
 
 ```bash
     $ systemctl start php-daemon
@@ -103,20 +114,6 @@ see what is going on while starting or stoping the service:
 ```bash
     journalctl -f -u php-daemon
 ```
-
-## Reports
-
-As part of the built result, some reports and api documentations have been created:
-
-    dist/report
-    ├── apigen
-    ├── lint
-    ├── pdepend
-    ├── phpcpd
-    ├── phpcs
-    ├── phpdocumentor
-    ├── phploc
-    └── phpmd
 
 ## TODO:
 
